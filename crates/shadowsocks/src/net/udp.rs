@@ -35,11 +35,11 @@ use futures::ready;
 use tokio::io::Interest;
 use tokio::{io::ReadBuf, net::ToSocketAddrs};
 
-use crate::{ServerAddr, context::Context, relay::socks5::Address};
+use crate::{context::Context, relay::socks5::Address, ServerAddr};
 
 use super::{
-    AcceptOpts, AddrFamily, ConnectOpts,
     sys::{bind_outbound_udp_socket, create_inbound_udp_socket, create_outbound_udp_socket},
+    AcceptOpts, AddrFamily, ConnectOpts,
 };
 
 /// Message struct for `batch_send`
@@ -78,10 +78,7 @@ pub struct BatchRecvMessage<'a> {
 
 #[inline]
 fn make_mtu_error(packet_size: usize, mtu: usize) -> io::Error {
-    io::Error::new(
-        io::ErrorKind::Other,
-        format!("UDP packet {} > MTU {}", packet_size, mtu),
-    )
+    io::Error::other(format!("UDP packet {} > MTU {}", packet_size, mtu))
 }
 
 /// Wrappers for outbound `UdpSocket`
@@ -97,7 +94,7 @@ impl UdpSocket {
         context: &Context,
         addr: &ServerAddr,
         opts: &ConnectOpts,
-    ) -> io::Result<UdpSocket> {
+    ) -> io::Result<Self> {
         let socket = match *addr {
             ServerAddr::SocketAddr(ref remote_addr) => {
                 let socket = create_outbound_udp_socket(From::from(remote_addr), opts).await?;
@@ -113,18 +110,14 @@ impl UdpSocket {
             }
         };
 
-        Ok(UdpSocket {
+        Ok(Self {
             socket,
             mtu: opts.udp.mtu,
         })
     }
 
     /// Connects to proxy target
-    pub async fn connect_remote_with_opts(
-        context: &Context,
-        addr: &Address,
-        opts: &ConnectOpts,
-    ) -> io::Result<UdpSocket> {
+    pub async fn connect_remote_with_opts(context: &Context, addr: &Address, opts: &ConnectOpts) -> io::Result<Self> {
         let socket = match *addr {
             Address::SocketAddress(ref remote_addr) => {
                 let socket = create_outbound_udp_socket(From::from(remote_addr), opts).await?;
@@ -140,41 +133,39 @@ impl UdpSocket {
             }
         };
 
-        Ok(UdpSocket {
+        Ok(Self {
             socket,
             mtu: opts.udp.mtu,
         })
     }
 
     /// Connects to shadowsocks server
-    pub async fn connect_with_opts(addr: &SocketAddr, opts: &ConnectOpts) -> io::Result<UdpSocket> {
+    pub async fn connect_with_opts(addr: &SocketAddr, opts: &ConnectOpts) -> io::Result<Self> {
         let socket = create_outbound_udp_socket(From::from(addr), opts).await?;
         socket.connect(addr).await?;
-        Ok(UdpSocket {
+        Ok(Self {
             socket,
             mtu: opts.udp.mtu,
         })
     }
 
     /// Binds to a specific address with opts
-    pub async fn connect_any_with_opts<AF: Into<AddrFamily>>(af: AF, opts: &ConnectOpts) -> io::Result<UdpSocket> {
-        create_outbound_udp_socket(af.into(), opts)
-            .await
-            .map(|socket| UdpSocket {
-                socket,
-                mtu: opts.udp.mtu,
-            })
+    pub async fn connect_any_with_opts<AF: Into<AddrFamily>>(af: AF, opts: &ConnectOpts) -> io::Result<Self> {
+        create_outbound_udp_socket(af.into(), opts).await.map(|socket| Self {
+            socket,
+            mtu: opts.udp.mtu,
+        })
     }
 
     /// Binds to a specific address as an outbound socket
     #[inline]
-    pub async fn bind(addr: &SocketAddr) -> io::Result<UdpSocket> {
-        UdpSocket::bind_with_opts(addr, &ConnectOpts::default()).await
+    pub async fn bind(addr: &SocketAddr) -> io::Result<Self> {
+        Self::bind_with_opts(addr, &ConnectOpts::default()).await
     }
 
     /// Binds to a specific address with opts as an outbound socket
-    pub async fn bind_with_opts(addr: &SocketAddr, opts: &ConnectOpts) -> io::Result<UdpSocket> {
-        bind_outbound_udp_socket(addr, opts).await.map(|socket| UdpSocket {
+    pub async fn bind_with_opts(addr: &SocketAddr, opts: &ConnectOpts) -> io::Result<Self> {
+        bind_outbound_udp_socket(addr, opts).await.map(|socket| Self {
             socket,
             mtu: opts.udp.mtu,
         })
@@ -182,14 +173,14 @@ impl UdpSocket {
 
     /// Binds to a specific address (inbound)
     #[inline]
-    pub async fn listen(addr: &SocketAddr) -> io::Result<UdpSocket> {
-        UdpSocket::listen_with_opts(addr, AcceptOpts::default()).await
+    pub async fn listen(addr: &SocketAddr) -> io::Result<Self> {
+        Self::listen_with_opts(addr, AcceptOpts::default()).await
     }
 
     /// Binds to a specific address (inbound)
-    pub async fn listen_with_opts(addr: &SocketAddr, opts: AcceptOpts) -> io::Result<UdpSocket> {
+    pub async fn listen_with_opts(addr: &SocketAddr, opts: AcceptOpts) -> io::Result<Self> {
         let socket = create_inbound_udp_socket(addr, opts.ipv6_only).await?;
-        Ok(UdpSocket {
+        Ok(Self {
             socket,
             mtu: opts.udp.mtu,
         })
@@ -400,12 +391,40 @@ impl DerefMut for UdpSocket {
 
 impl From<tokio::net::UdpSocket> for UdpSocket {
     fn from(socket: tokio::net::UdpSocket) -> Self {
-        UdpSocket { socket, mtu: None }
+        Self { socket, mtu: None }
     }
 }
 
 impl From<UdpSocket> for tokio::net::UdpSocket {
-    fn from(s: UdpSocket) -> tokio::net::UdpSocket {
+    fn from(s: UdpSocket) -> Self {
         s.socket
+    }
+}
+
+#[cfg(unix)]
+impl std::os::fd::AsRawFd for UdpSocket {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.socket.as_raw_fd()
+    }
+}
+
+#[cfg(unix)]
+impl std::os::fd::AsFd for UdpSocket {
+    fn as_fd(&self) -> std::os::fd::BorrowedFd<'_> {
+        self.socket.as_fd()
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::AsRawSocket for UdpSocket {
+    fn as_raw_socket(&self) -> std::os::windows::io::RawSocket {
+        self.socket.as_raw_socket()
+    }
+}
+
+#[cfg(windows)]
+impl std::os::windows::io::AsSocket for UdpSocket {
+    fn as_socket(&self) -> std::os::windows::io::BorrowedSocket<'_> {
+        self.socket.as_socket()
     }
 }

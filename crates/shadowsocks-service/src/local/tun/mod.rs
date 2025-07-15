@@ -3,8 +3,7 @@
 #[cfg(unix)]
 use std::os::unix::io::RawFd;
 use std::{
-    io::{self, ErrorKind},
-    mem,
+    io, mem,
     net::{IpAddr, SocketAddr},
     sync::Arc,
     time::Duration,
@@ -64,8 +63,8 @@ unsafe impl Send for TunBuilder {}
 
 impl TunBuilder {
     /// Create a Tun service builder
-    pub fn new(context: Arc<ServiceContext>, balancer: PingBalancer) -> TunBuilder {
-        TunBuilder {
+    pub fn new(context: Arc<ServiceContext>, balancer: PingBalancer) -> Self {
+        Self {
             context,
             balancer,
             tun_config: TunConfiguration::default(),
@@ -119,7 +118,7 @@ impl TunBuilder {
         let device = match create_as_async(&self.tun_config) {
             Ok(d) => d,
             Err(TunError::Io(err)) => return Err(err),
-            Err(err) => return Err(io::Error::new(ErrorKind::Other, err)),
+            Err(err) => return Err(io::Error::other(err)),
         };
 
         let (udp, udp_cleanup_interval, udp_keepalive_rx) = UdpTun::new(
@@ -165,7 +164,7 @@ impl Tun {
             Ok(a) => a,
             Err(err) => {
                 error!("[TUN] failed to get device address, error: {}", err);
-                return Err(io::Error::new(io::ErrorKind::Other, err));
+                return Err(io::Error::other(err));
             }
         };
 
@@ -173,7 +172,7 @@ impl Tun {
             Ok(n) => n,
             Err(err) => {
                 error!("[TUN] failed to get device netmask, error: {}", err);
-                return Err(io::Error::new(io::ErrorKind::Other, err));
+                return Err(io::Error::other(err));
             }
         };
 
@@ -181,7 +180,7 @@ impl Tun {
             Ok(n) => n,
             Err(err) => {
                 error!("[TUN] invalid address {}, netmask {}, error: {}", address, netmask, err);
-                return Err(io::Error::new(io::ErrorKind::Other, err));
+                return Err(io::Error::other(err));
             }
         };
 
@@ -245,7 +244,7 @@ impl Tun {
 
                 // UDP keep-alive associations
                 peer_addr_opt = self.udp_keepalive_rx.recv() => {
-                    let peer_addr = peer_addr_opt.expect("UDP keep-alive channel closed unexpectly");
+                    let peer_addr = peer_addr_opt.expect("UDP keep-alive channel closed unexpectedly");
                     self.udp.keep_alive(&peer_addr).await;
                 }
 
