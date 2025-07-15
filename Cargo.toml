@@ -14,6 +14,13 @@ rust-version = "1.85"
 [badges]
 maintenance = { status = "passively-maintained" }
 
+
+[[bin]]
+name = "sss"
+path = "tests/sss.rs"
+required-features = ["utility"]
+
+
 [[bin]]
 name = "sslocal"
 path = "bin/sslocal.rs"
@@ -200,6 +207,8 @@ security-replay-attack-detect = [
 replay-attack-detect = [
     "security-replay-attack-detect",
 ] # Backward compatibility. DO NOT USE.
+
+
 
 [dependencies]
 log = "0.4"
